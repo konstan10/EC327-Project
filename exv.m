@@ -145,6 +145,3 @@ s = mean(R([1 4])/cos(ang));
 R = [cos(ang) -sin(ang); sin(ang) cos(ang)];
 H = [[s*R; t], [0 0 1]'];
 end
-
-
-
