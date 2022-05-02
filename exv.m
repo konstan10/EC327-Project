@@ -1,19 +1,29 @@
+warning('off','all');
+warning
+
 clear all
 close all
 tic
 
 fig = uifigure('Name','Video Stabilizer 1.0');
 fig.Color = '#ADD8E6';
-btn1 = uibutton(fig,'push','Position',[100, 100, 100, 22],'Text','Choose Video','ButtonPushedFcn', @(btn1,event) fin(btn1)); %fin
-btn2 = uibutton(fig,'push','Position',[100, 200, 120, 22],'Text','Choose Output Path','ButtonPushedFcn', @(btn2,event) fileout(btn2)); %fout
-btn3 = uibutton(fig,'push','Position',[100, 300, 100, 22],'Text','Stabilize','ButtonPushedFcn', @(btn3,event) convert(btn3)); %convert
+btn1 = uibutton(fig,'push','Position',[220, 375, 120, 22],'Text','Choose Video','ButtonPushedFcn', @(btn1,event) fin(btn1)); %fin
+btn2 = uibutton(fig,'push','Position',[220, 275, 120, 22],'Text','Choose Output Path','ButtonPushedFcn', @(btn2,event) fileout(btn2)); %fout
+btn3 = uibutton(fig,'push','Position',[220, 175, 120, 22],'Text','Stabilize','ButtonPushedFcn', @(btn3,event) convert(btn3)); %convert
+sld = uislider(fig,'Position',[220, 100, 120, 22],'Limits',[0 1],'Value',0,'ValueChangingFcn',@(sld,event) sensitivity(event));
+lbl1 = uilabel(fig,'Position',[250 100 150 32],'Text','Sensitivity');
 
 global ogD;
 global filein;
 global pathin;
 global pathout;
-
+global sen;
 ogD = pwd;
+
+function sensitivity(event)
+global sen;
+sen = event.Value;
+end
 
 %select input file
 function fin(btn1)
@@ -24,6 +34,7 @@ if isequal(filein,0)
    disp('User selected Cancel');
 else
    disp(['User selected ', fullfile(pathin,filein)]);
+   
 end
 end
 
@@ -40,79 +51,100 @@ global filein;
 global pathin;
 global pathout;
 global ogD;
+global sen;
 if isempty(filein)
     f = msgbox('Select a video first','Error');
 elseif isempty(pathout)
     f = msgbox('Select an output path first','Error'); 
 else
+f = waitbar(0,'Starting stabilization');
 cd(pathin)
-ds = 0.15;
-frames = getVideoData(filein, ds);
-refFrame = frames(:,:,1);
-xdisp = zeros(1,size(frames,3));
-ydisp = zeros(1,size(frames,3));
-for i = 2:size(frames,3)
-    xc = xcorr2(refFrame,frames(:,:,i));
-    OneD_XC = xc(:);
-    [~, maxix] = max(OneD_XC);
-    [MaxRow, MaxCol] = ind2sub(size(xc), maxix);
-    xdisp(i) = MaxRow - 108;
-    ydisp(i) = MaxCol - 192;
-end
-movie = makeRegisteredMovie(frames, -xdisp, -ydisp);
+newFileName = "stable42";
+vid = VideoReader(filein);
+numFrames = vid.numFrames;
+frameRate = vid.FrameRate;
 cd(pathout)
-VidObj = VideoWriter(filein, 'Uncompressed AVI'); %set your file name and video compression
-VidObj.FrameRate = 30; %set your frame rate
-open(VidObj);
-for f = 1:size(movie, 3)  %T is your "100x150x75" matrix
-    writeVideo(VidObj,mat2gray(movie(:,:,f)));
+nvid = VideoWriter(newFileName, 'MPEG-4');
+nvid.FrameRate = frameRate;
+open(nvid);
+hCum = eye(3);
+frame = readFrame(vid);
+[frameDim(1), frameDim(2), ~, ~] = size(frame);
+grayFrame1 = zeros(frameDim(1), frameDim(2));
+grayFrame2 = grayFrame1;
+grayFrame1 = rgb2gray(frame);
+for i = 2:numFrames
+	frame = readFrame(vid);
+	grayFrame2 = rgb2gray(frame);
+	transH = cvexEstStabilizationTform(grayFrame1, grayFrame2, sen);
+	transHsrt = cvexTformToSRT(transH);
+	hCum = transHsrt * hCum;
+	newFrame = imwarp(frame, affine2d(hCum), 'OutputView', imref2d(size(grayFrame2)));
+	writeVideo(nvid, newFrame);
+	grayFrame1 = grayFrame2;
+    waitbar(i/numFrames,f,'Stabilizing')
 end
-close(VidObj);
+delete(f);
+f = msgbox("Stabilization Complete",'Success');
+close(nvid);
 end
 cd(ogD);
 toc
 end
 
-function frames = getVideoData(fn, ds)
-% fn: the filename of the video to load
-% ds: downsample factor.  e.g. ds=0.1 to downsample the movie by 10 in each
-% direction
+function H = cvexEstStabilizationTform(leftI,rightI,ptThresh)
+%Get inter-image transform and aligned point features.
+%  H = cvexEstStabilizationTform(leftI,rightI) returns an affine transform
+%  between leftI and rightI using the |estimateGeometricTransform|
+%  function.
+%
+%  H = cvexEstStabilizationTform(leftI,rightI,ptThresh) also accepts
+%  arguments for the threshold to use for the corner detector.
 
-vReader = VideoReader(fn);
-firstFrame = readFrame(vReader);
+% Copyright 2010 The MathWorks, Inc.
 
-frames = imresize(mean(firstFrame, 3), ds, 'bilinear');
-frames = frames - mean(frames(:));
-frames(:,:, vReader.NumFrames) = 0;
-
-for i = 2:vReader.NumFrames
-    
-    vidFrame = readFrame(vReader);
-    frames(:, :, i) = imresize(mean(vidFrame, 3), ds, 'bilinear');
-    frames(:, :, i) = frames(:, :, i) - mean(mean(frames(:, :, i)));
-    
-end
+% Set default parameters
+if nargin < 3 || isempty(ptThresh)
+    ptThresh = 0.1;
 end
 
-function regFrames = makeRegisteredMovie(frames, row, col)
+%% Generate prospective points
+pointsA = detectFASTFeatures(leftI, 'MinContrast', ptThresh);
+pointsB = detectFASTFeatures(rightI, 'MinContrast', ptThresh);
 
-xsz = size(frames, 2);
-ysz = size(frames, 1);
+%% Select point correspondences
+% Extract features for the corners
+[featuresA, pointsA] = extractFeatures(leftI, pointsA);
+[featuresB, pointsB] = extractFeatures(rightI, pointsB);
 
-padx2 = -min(col);
-padx1 = max(col);
+% Match features which were computed from the current and the previous
+% images
+indexPairs = matchFeatures(featuresA, featuresB, 'MaxRatio', 1);
+pointsA = pointsA(indexPairs(:, 1), :);
+pointsB = pointsB(indexPairs(:, 2), :);
 
-pady2 = -min(row);
-pady1 = max(row);
-
-regFrames = zeros(ysz+pady1+pady2, xsz+padx1+padx2, size(frames, 3));
-
-for i = 1:size(frames, 3)
-    xdev = -col(i);
-    ydev = -row(i);
-    
-    regFrames(ydev+1+pady1:ydev+ysz+pady1, xdev+1+padx1:xdev+xsz+padx1, i) = frames(:, :, i);   
+%% Use MSAC algorithm to compute the affine transformation
+tform = estimateGeometricTransform2D(pointsB, pointsA, 'affine', 'MaxDistance', 10);
+H = tform.T;
 end
 
-regFrames = regFrames(pady1+pady2:ysz, padx1+padx2:xsz, :);
+function [H,s,ang,t,R] = cvexTformToSRT(H)
+%Convert a 3-by-3 affine transform to a scale-rotation-translation
+%transform.
+%  [H,S,ANG,T,R] = cvexTformToSRT(H) returns the scale, rotation, and
+%  translation parameters, and the reconstituted transform H.
+
+% Extract rotation and translation submatrices
+R = H(1:2,1:2);
+t = H(3, 1:2);
+% Compute theta from mean of stable arctangents
+ang = mean([atan2(R(2),R(1)) atan2(-R(3),R(4))]);
+% Compute scale from mean of two stable mean calculations
+s = mean(R([1 4])/cos(ang));
+% Reconstitute transform
+R = [cos(ang) -sin(ang); sin(ang) cos(ang)];
+H = [[s*R; t], [0 0 1]'];
 end
+
+
+
