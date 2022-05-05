@@ -5,9 +5,9 @@ Step 1: Set Up MATLAB
 
 Create a MathWorks account, sign in and install software, and activate software.
 
-Step 2: Download MATLAB's Image Processing Toolbox.
+Step 2: Download MATLAB's Image Processing Toolbox and Computer Vision Toolbox.
 
-Go to MATLAB's commmand window and to the top right corner, click on Add-Ons, click Get Add-ons, and then type Image Processing Toolbox in the Add-on Explorer and install.
+Go to MATLAB's commmand window and to the top right corner, click on Add-Ons, click Get Add-ons, and then type Image Processing Toolbox in the Add-on Explorer and install. Then do the same for Computer Vision Toolbox.
 
 Step 3: Download Video Stabilization Application
 
