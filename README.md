@@ -1,15 +1,15 @@
 # EC327-Project
 Instructions to install and run Video Stabilization Application
 
-Step 1: set up MATLAB
+Step 1: Set Up MATLAB
 
 Create a MathWorks account, sign in and install software, and activate software.
 
-Step 2: download MATLAB's Image Processing Toolbox.
+Step 2: Download MATLAB's Image Processing Toolbox.
 
 Go to MATLAB's commmand window and to the top right corner, click on Add-Ons, click Get Add-ons, and then type Image Processing Toolbox in the Add-on Explorer and install.
 
-Step 3: download Video Stabilization Application
+Step 3: Download Video Stabilization Application
 
 Download the file exv.m and open into MATLAB.
 
